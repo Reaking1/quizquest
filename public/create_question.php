@@ -54,28 +54,31 @@
             </select>
         </div>
 
-        <div id="mcqOptions">
-            <div class="mb-3">
-                <label class="form-label">Option A</label>
-                <input type="text" class="form-control" id="option_a">
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Option B</label>
-                <input type="text" class="form-control" id="option_b">
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Option C</label>
-                <input type="text" class="form-control" id="option_c">
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Option D</label>
-                <input type="text" class="form-control" id="option_d">
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Correct Answer (A/B/C/D)</label>
-                <input type="text" class="form-control" id="correct_answer">
-            </div>
-        </div>
+  <div id="mcqOptions">
+    <div class="mb-3">
+        <label class="form-label">Option A</label>
+        <input type="text" class="form-control" id="option_a">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Option B</label>
+        <input type="text" class="form-control" id="option_b">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Option C</label>
+        <input type="text" class="form-control" id="option_c">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Option D</label>
+        <input type="text" class="form-control" id="option_d">
+    </div>
+</div>
+
+<!-- Always show this -->
+<div class="mb-3">
+    <label class="form-label" id="correctLabel">Correct Answer (A/B/C/D)</label>
+    <input type="text" class="form-control" id="correct_answer">
+</div>
+
 
         <button type="submit" class="btn btn-primary">Create Question</button>
     </form>

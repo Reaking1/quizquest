@@ -271,6 +271,34 @@ try {
       break;
     }
 
+    // in api.php
+case 'register_player': {
+    $b = json_input();
+    require_fields($b, ['name','email']);
+    $sel = $pdo->prepare("SELECT id FROM players WHERE email=?");
+    $sel->execute([$b['email']]);
+    $pid = $sel->fetchColumn();
+    if (!$pid) {
+        $ins = $pdo->prepare("INSERT INTO players (name,email) VALUES (?,?)");
+        $ins->execute([$b['name'],$b['email']]);
+        $pid = (int)$pdo->lastInsertId();
+    }
+    respond(['player_id'=>$pid,'name'=>$b['name'],'email'=>$b['email']]);
+    break;
+}
+
+case 'get_questions_by_round': {
+    $round_id = (int)($_GET['round_id'] ?? 0);
+    $stmt = $pdo->prepare("SELECT q.* 
+                           FROM questions q 
+                           JOIN round_questions rq ON rq.question_id=q.id 
+                           WHERE rq.round_id=? ORDER BY rq.order_no");
+    $stmt->execute([$round_id]);
+    respond($stmt->fetchAll(PDO::FETCH_ASSOC));
+    break;
+}
+
+
     default:
       respond(['error' => 'Unknown action'], 404);
   }
