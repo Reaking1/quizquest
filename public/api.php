@@ -22,18 +22,30 @@ try {
       break;
 
     /* 1) Create Quiz Questions */
-    case 'create_question': {
-      $b = json_input();
-      require_fields($b, ['text', 'type', 'difficulty']);
-      if ($b['type'] === 'MCQ') {
-        require_fields($b, ['option_a','option_b','option_c','option_d','correct_answer']);
-      }
+   case 'create_question': {
+    $b = json_input();
+    require_fields($b, ['text', 'type', 'difficulty']);
 
-      $sql = "INSERT INTO questions
-                (text, type, difficulty, option_a, option_b, option_c, option_d, correct_answer)
-              VALUES (?,?,?,?,?,?,?,?)";
-      $stmt = $pdo->prepare($sql);
-      $stmt->execute([
+    if ($b['type'] === 'MCQ') {
+        require_fields($b, ['option_a','option_b','option_c','option_d','correct_answer']);
+
+        // Map the selected key (A/B/C/D) to full text
+        $optionMap = [
+            'A' => $b['option_a'],
+            'B' => $b['option_b'],
+            'C' => $b['option_c'],
+            'D' => $b['option_d'],
+        ];
+        $correctAnswerFullText = $optionMap[$b['correct_answer']] ?? null;
+    } else {
+        $correctAnswerFullText = $b['correct_answer'] ?? null;
+    }
+
+    $sql = "INSERT INTO questions
+            (text, type, difficulty, option_a, option_b, option_c, option_d, correct_answer)
+            VALUES (?,?,?,?,?,?,?,?)";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([
         $b['text'],
         $b['type'],
         $b['difficulty'],
@@ -41,11 +53,12 @@ try {
         $b['option_b'] ?? null,
         $b['option_c'] ?? null,
         $b['option_d'] ?? null,
-        $b['correct_answer'] ?? null,
-      ]);
-      respond(['id' => (int)$pdo->lastInsertId()], 201);
-      break;
-    }
+        $correctAnswerFullText,
+    ]);
+
+    respond(['id' => (int)$pdo->lastInsertId()], 201);
+    break;
+}
 
     /* 2) Manage Quiz & Rounds */
     case 'create_quiz': {
@@ -294,6 +307,25 @@ case 'get_questions_by_round': {
                            JOIN round_questions rq ON rq.question_id=q.id 
                            WHERE rq.round_id=? ORDER BY rq.order_no");
     $stmt->execute([$round_id]);
+    respond($stmt->fetchAll(PDO::FETCH_ASSOC));
+    break;
+}
+/* Get all quizzes */
+case 'get_quizzes': {
+    $stmt = $pdo->query("SELECT id, title FROM quizzes ORDER BY id DESC");
+    respond($stmt->fetchAll(PDO::FETCH_ASSOC));
+    break;
+}
+case 'get_rounds': {
+    $quiz_id = (int)($_GET['quiz_id'] ?? 0);
+    if($quiz_id <= 0) {
+        respond([], 400);
+        break;
+    }
+
+    $stmt = $pdo->prepare("SELECT id, name, theme, time_limit_sec, order_no 
+                           FROM rounds WHERE quiz_id=? ORDER BY order_no");
+    $stmt->execute([$quiz_id]);
     respond($stmt->fetchAll(PDO::FETCH_ASSOC));
     break;
 }
