@@ -78,66 +78,104 @@
     }
 
     // 5️⃣ Show current question
-    function showQuestion(){
-        const q = questions[currentQuestionIndex];
-        document.getElementById('questionText').textContent = q.text;
-        const optionsDiv = document.getElementById('options');
-        optionsDiv.innerHTML = '';
+function showQuestion(){
+    const q = questions[currentQuestionIndex];
+    document.getElementById('questionText').textContent = q.text;
+    document.getElementById('questionCounter').textContent = 
+        `Question ${currentQuestionIndex+1} of ${questions.length}`;
+    const optionsDiv = document.getElementById('options');
+    optionsDiv.innerHTML = '';
 
-        if(q.type === 'MCQ'){
-            ['option_a','option_b','option_c','option_d'].forEach(optKey=>{
-                if(q[optKey]){
-                    const btn = document.createElement('button');
-                    btn.className = 'btn btn-outline-primary m-1';
-                    btn.textContent = q[optKey];
-                    btn.onclick = ()=>submitAnswer(q[optKey]);
-                    optionsDiv.appendChild(btn);
-                }
-            });
-            document.getElementById('answerDiv').style.display = 'none';
-        } else {
-            document.getElementById('answerDiv').style.display = 'block';
-            document.getElementById('answerInput').value = '';
-        }
+    if(q.type === 'MCQ'){
+        let html = '';
+        ['A','B','C','D'].forEach(letter=>{
+            const key = 'option_' + letter.toLowerCase();
+            if(q[key]){
+                html += `
+                  <div class="form-check mb-2">
+                    <input class="form-check-input" type="radio" 
+                           name="mcqOption" id="opt${letter}" value="${q[key]}">
+                    <label class="form-check-label" for="opt${letter}">
+                      ${letter}) ${q[key]}
+                    </label>
+                  </div>
+                `;
+            }
+        });
+        optionsDiv.innerHTML = html;
+        document.getElementById('answerDiv').style.display = 'none';
+        document.getElementById('submitDiv').style.display = 'block';  // ✅ show button
+    } else {
+        document.getElementById('answerDiv').style.display = 'block';
+        document.getElementById('submitDiv').style.display = 'block';  // ✅ show button
+        document.getElementById('answerInput').value = '';
     }
+}
+
+
 
     // 6️⃣ Submit answer
-async function submitAnswer(answerText=null){
+// 6️⃣ Submit answer
+async function submitAnswer(){
     const q = questions[currentQuestionIndex];
-    if(q.type !== 'MCQ') {
-        answerText = document.getElementById('answerInput').value;
+    let answerText = null;
+
+    if(q.type === 'MCQ'){
+        const selected = document.querySelector('input[name="mcqOption"]:checked');
+        if(!selected){
+            alert('Please select an option');
+            return;
+        }
+        answerText = selected.value;  // actual text of option
+    } else {
+        answerText = document.getElementById('answerInput').value.trim();
+        if(!answerText){
+            alert('Please enter an answer');
+            return;
+        }
     }
 
     const playerName = document.getElementById('player_name').value;
 
-    const res = await fetch(`api.php?action=record_attempt`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-            player_name: playerName,  // <- send name, not ID
-            quiz_id,
-            round_id,
-            question_id: q.id,
-            answer_text: answerText
-        })
-    });
-    const data = await res.json();
+    try {
+        const res = await fetch(`api.php?action=record_attempt`, {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({
+                player_name: playerName,
+                quiz_id,
+                round_id,
+                question_id: q.id,
+                answer_text: answerText
+            })
+        });
+        const data = await res.json();
 
-    if(data.error){
-        alert("Error: " + data.error);
-        console.error(data);
-        return;
-    }
+        if(data.error){
+            alert("Error: " + data.error);
+            console.error(data);
+            return;
+        }
 
-    alert(data.is_correct?`Correct! +${data.earned_points}`:`Wrong!`);
-    currentQuestionIndex++;
-    if(currentQuestionIndex < questions.length){
-        showQuestion();
-    } else {
-        alert('Quiz Finished! Check leaderboard.');
-        window.location.href='leaderboard.php?quiz_id=' + quiz_id;
+        // ✅ Give feedback
+        alert(data.is_correct 
+            ? `✅ Correct! +${data.earned_points} points` 
+            : `❌ Wrong! Correct answer was: ${q.correct_answer}`);
+
+        // Move to next question
+        currentQuestionIndex++;
+        if(currentQuestionIndex < questions.length){
+            showQuestion();
+        } else {
+            alert('🎉 Quiz Finished! Check leaderboard.');
+            window.location.href = 'leaderboard.php?quiz_id=' + quiz_id;
+        }
+    } catch(err){
+        console.error(err);
+        alert("Network error submitting answer.");
     }
 }
+
 
     </script>
 </head>
@@ -173,13 +211,22 @@ async function submitAnswer(answerText=null){
     </div>
 
     <!-- Quiz Questions -->
-    <div id="quizDiv" style="display:none; margin-top:20px;">
-        <h3 id="questionText"></h3>
-        <div id="options" class="mb-3"></div>
-        <div id="answerDiv" style="display:none;">
-            <input type="text" class="form-control" id="answerInput">
-            <button class="btn btn-success mt-2" onclick="submitAnswer()">Submit Answer</button>
-        </div>
+        <!-- Quiz Questions -->
+<div id="quizDiv" style="display:none; margin-top:20px;">
+    <h4 id="questionCounter"></h4>
+    <h3 id="questionText"></h3>
+    <div id="options" class="mb-3"></div>
+    
+    <!-- Shared submit button (for MCQ and OPEN) -->
+    <div id="submitDiv" style="display:none;">
+        <button class="btn btn-success mt-2" onclick="submitAnswer()">Submit Answer</button>
     </div>
+
+    <!-- Open question input -->
+    <div id="answerDiv" style="display:none;">
+        <input type="text" class="form-control mb-2" id="answerInput">
+    </div>
+</div>
+
 </body>
 </html>

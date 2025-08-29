@@ -88,95 +88,130 @@ try {
       break;
     }
 
-    case 'attach_question': {
-      $b = json_input();
-      require_fields($b, ['round_id','question_id','order_no']);
-      $stmt = $pdo->prepare(
-        "INSERT INTO round_questions (round_id, question_id, order_no)
-         VALUES (?,?,?)"
-      );
-      $stmt->execute([
+case 'create_question': {
+  $b = json_input();
+  require_fields($b, ['text', 'type', 'difficulty']);
+
+  if ($b['type'] === 'MCQ') {
+    require_fields($b, ['option_a','option_b','option_c','option_d','correct_answer']);
+
+    // If the correct_answer is A/B/C/D, expand to actual option text
+    $map = [
+      'A' => $b['option_a'],
+      'B' => $b['option_b'],
+      'C' => $b['option_c'],
+      'D' => $b['option_d'],
+    ];
+    $letter = strtoupper(trim($b['correct_answer']));
+    if(isset($map[$letter])){
+      $b['correct_answer'] = $map[$letter]; // store text not letter
+    }
+  }
+
+  $sql = "INSERT INTO questions
+            (text, type, difficulty, option_a, option_b, option_c, option_d, correct_answer)
+          VALUES (?,?,?,?,?,?,?,?)";
+  $stmt = $pdo->prepare($sql);
+  $stmt->execute([
+    $b['text'],
+    $b['type'],
+    $b['difficulty'],
+    $b['option_a'] ?? null,
+    $b['option_b'] ?? null,
+    $b['option_c'] ?? null,
+    $b['option_d'] ?? null,
+    $b['correct_answer'] ?? null,
+  ]);
+  respond(['id' => (int)$pdo->lastInsertId()], 201);
+  break;
+}
+
+case 'attach_question': {
+    $b = json_input();
+    require_fields($b, ['round_id','question_id','order_no']);
+
+    $stmt = $pdo->prepare(
+        "INSERT INTO round_questions (round_id, question_id, order_no) VALUES (?,?,?)"
+    );
+    $stmt->execute([
         (int)$b['round_id'],
         (int)$b['question_id'],
-        (int)$b['order_no'],
-      ]);
-      respond(['ok' => true], 201);
-      break;
-    }
+        (int)$b['order_no']
+    ]);
+
+    respond(['attached' => true], 201);
+    break;
+}
 
     /* 3) Record Player Scores (via attempts) */
-    case 'record_attempt': {
-      $b = json_input();
-      require_fields($b, ['player_name','quiz_id','round_id','question_id','answer_text']);
+case 'record_attempt': {
+  $b = json_input();
+  require_fields($b, ['quiz_id','round_id','question_id','answer_text']);
+  $quizId     = (int)$b['quiz_id'];
+  $roundId    = (int)$b['round_id'];
+  $questionId = (int)$b['question_id'];
+  $answerText = (string)$b['answer_text'];
 
-      $quizId = (int)$b['quiz_id'];
-      $roundId = (int)$b['round_id'];
-      $questionId = (int)$b['question_id'];
-      $answerText = (string)$b['answer_text'];
+  $normalize = function (?string $s): string {
+    $s = (string)$s;
+    $s = trim($s);
+    $s = preg_replace('/\s+/u',' ', $s);
+    return mb_strtolower($s, 'UTF-8');
+  };
 
-      $pdo->beginTransaction();
+  $q = $pdo->prepare("SELECT type, difficulty, correct_answer, option_a, option_b, option_c, option_d
+                      FROM questions WHERE id=?");
+  $q->execute([$questionId]);
+  $qr = $q->fetch(PDO::FETCH_ASSOC);
+  if (!$qr) throw new RuntimeException('Question not found');
 
-      // ensure player exists
-      $sel = $pdo->prepare("SELECT id FROM players WHERE name=?");
-      $sel->execute([$b['player_name']]);
-      $playerId = $sel->fetchColumn();
-      if (!$playerId) {
-        $ins = $pdo->prepare("INSERT INTO players (name) VALUES (?)");
-        $ins->execute([$b['player_name']]);
-        $playerId = (int)$pdo->lastInsertId();
-      } else {
-        $playerId = (int)$playerId;
-      }
+  // Expand letter answer if player clicked A/B/C/D
+  $letterToText = function(string $letter, array $qr): ?string {
+    $map = [
+      'A' => $qr['option_a'] ?? null,
+      'B' => $qr['option_b'] ?? null,
+      'C' => $qr['option_c'] ?? null,
+      'D' => $qr['option_d'] ?? null,
+    ];
+    $key = strtoupper(trim($letter));
+    return $map[$key] ?? null;
+  };
 
-      // verify round belongs to quiz
-      $rq = $pdo->prepare("SELECT quiz_id FROM rounds WHERE id=?");
-      $rq->execute([$roundId]);
-      $round = $rq->fetch();
-      if (!$round) throw new RuntimeException('Round not found');
-      if ((int)$round['quiz_id'] !== $quizId) {
-        throw new RuntimeException('Round does not belong to the specified quiz');
-      }
+  $userAnswer = $answerText;
+  if ($qr['type'] === 'MCQ' && in_array(strtoupper(trim($userAnswer)), ['A','B','C','D'], true)) {
+    $expanded = $letterToText($userAnswer, $qr);
+    if ($expanded) $userAnswer = $expanded;
+  }
 
-      // verify question exists and is attached to the round
-      $q = $pdo->prepare("SELECT type, difficulty, correct_answer FROM questions WHERE id=?");
-      $q->execute([$questionId]);
-      $qrow = $q->fetch();
-      if (!$qrow) throw new RuntimeException('Question not found');
+  $storedCorrect = $qr['correct_answer'];
 
-      $map = $pdo->prepare("SELECT 1 FROM round_questions WHERE round_id=? AND question_id=?");
-      $map->execute([$roundId, $questionId]);
-      if (!$map->fetchColumn()) {
-        throw new RuntimeException('Question not attached to this round');
-      }
+// Decide correctness
+$isCorrect = 0;
+if ($qr['type'] === 'MCQ') {
+    $isCorrect = ($normalize($userAnswer) === $normalize($storedCorrect)) ? 1 : 0;
+} else { // OPEN
+    // allow multiple correct answers separated by comma
+    $validAnswers = array_map($normalize, explode(',', (string)$storedCorrect));
+    $isCorrect = in_array($normalize($userAnswer), $validAnswers, true) ? 1 : 0;
+}
 
-      // auto-mark MCQ only
-      $isCorrect = 0;
-      if ($qrow['type'] === 'MCQ') {
-        $isCorrect = (strcasecmp(trim($answerText), trim((string)$qrow['correct_answer'])) === 0) ? 1 : 0;
-      }
 
-      // simple difficulty weighting
-      $w = ['EASY' => 1, 'MEDIUM' => 2, 'HARD' => 3];
-      $points = $isCorrect ? ($w[$qrow['difficulty']] ?? 1) : 0;
+  $points = $isCorrect ? (['EASY'=>1,'MEDIUM'=>2,'HARD'=>3][$qr['difficulty']] ?? 1) : 0;
 
-      $insA = $pdo->prepare(
-        "INSERT INTO attempts (player_id, quiz_id, round_id, question_id, answer_text, is_correct, points)
-         VALUES (?,?,?,?,?,?,?)"
-      );
-      $insA->execute([$playerId, $quizId, $roundId, $questionId, $answerText, $isCorrect, $points]);
+  $insA = $pdo->prepare("INSERT INTO attempts (player_id, quiz_id, round_id, question_id, answer_text, is_correct, points)
+                         VALUES (?,?,?,?,?,?,?)");
+  $insA->execute([$b['player_id'], $quizId, $roundId, $questionId, $answerText, $isCorrect, $points]);
 
-      // update aggregate
-      $total = ScoreService::recalcScore($playerId, $quizId);
-      $pdo->commit();
+  $total = ScoreService::recalcScore($b['player_id'], $quizId);
 
-      respond([
-        'player_id'     => $playerId,
-        'is_correct'    => (bool)$isCorrect,
-        'earned_points' => $points,
-        'total_points'  => $total,
-      ], 201);
-      break;
-    }
+  respond([
+    'is_correct'    => (bool)$isCorrect,
+    'earned_points' => $points,
+    'total_points'  => $total,
+  ], 201);
+  break;
+}
+
 
     /* 4) Search Past Scores */
     case 'search_scores': {
