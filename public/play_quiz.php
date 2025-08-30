@@ -86,30 +86,22 @@ function showQuestion(){
     const optionsDiv = document.getElementById('options');
     optionsDiv.innerHTML = '';
 
-    if(q.type === 'MCQ'){
-        let html = '';
-        ['A','B','C','D'].forEach(letter=>{
-            const key = 'option_' + letter.toLowerCase();
-            if(q[key]){
-                html += `
-                  <div class="form-check mb-2">
-                    <input class="form-check-input" type="radio" 
-                           name="mcqOption" id="opt${letter}" value="${q[key]}">
-                    <label class="form-check-label" for="opt${letter}">
-                      ${letter}) ${q[key]}
-                    </label>
-                  </div>
-                `;
-            }
-        });
-        optionsDiv.innerHTML = html;
-        document.getElementById('answerDiv').style.display = 'none';
-        document.getElementById('submitDiv').style.display = 'block';  // ✅ show button
-    } else {
-        document.getElementById('answerDiv').style.display = 'block';
-        document.getElementById('submitDiv').style.display = 'block';  // ✅ show button
-        document.getElementById('answerInput').value = '';
-    }
+    ['A','B','C','D'].forEach(letter=>{
+        const key = 'option_' + letter.toLowerCase();
+        if(q[key]){
+            optionsDiv.innerHTML += `
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="radio" 
+                       name="mcqOption" id="opt${letter}" value="${q[key]}">
+                <label class="form-check-label" for="opt${letter}">
+                  ${letter}) ${q[key]}
+                </label>
+              </div>
+            `;
+        }
+    });
+
+    document.getElementById('submitDiv').style.display = 'block';
 }
 
 
@@ -142,11 +134,11 @@ async function submitAnswer(){
             method:'POST',
             headers:{'Content-Type':'application/json'},
             body: JSON.stringify({
-                player_name: playerName,
-                quiz_id,
-                round_id,
-                question_id: q.id,
-                answer_text: answerText
+                player_id,     // ✅ the integer id
+    quiz_id,
+    round_id,
+    question_id: q.id,
+    answer_text: answerText
             })
         });
         const data = await res.json();

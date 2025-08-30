@@ -38,12 +38,6 @@
         });
     }
 
-    function toggleOptions(){
-        const type = document.getElementById('type').value;
-        document.getElementById('mcqOptions').style.display = type === 'MCQ' ? 'block' : 'none';
-        document.getElementById('openAnswer').style.display = type === 'OPEN' ? 'block' : 'none';
-    }
-
     async function submitQuestion(event){
         event.preventDefault();
 
@@ -53,14 +47,15 @@
             return alert('Please select a quiz and round');
         }
 
-        const type = document.getElementById('type').value;
         const text = document.getElementById('text').value.trim();
         const difficulty = document.getElementById('difficulty').value;
 
         if(!text) return alert('Enter question text');
 
         const payload = {
-            text, type, difficulty,
+            text, 
+            type: 'MCQ',   // always MCQ
+            difficulty,
             option_a: document.getElementById('option_a').value || null,
             option_b: document.getElementById('option_b').value || null,
             option_c: document.getElementById('option_c').value || null,
@@ -87,7 +82,6 @@
 
             alert('Question created and attached to round!');
             document.getElementById('questionForm').reset();
-            toggleOptions(); // reset visibility
         } catch(err){
             console.error(err);
             alert('Error creating question.');
@@ -98,7 +92,7 @@
     </script>
 </head>
 <body class="container py-4">
-    <h1>Create Question</h1>
+    <h1>Create MCQ Question</h1>
     <form id="questionForm" onsubmit="submitQuestion(event)">
         <div class="mb-3">
             <label class="form-label">Select Quiz</label>
@@ -116,14 +110,6 @@
         </div>
 
         <div class="mb-3">
-            <label class="form-label">Type</label>
-            <select class="form-select" id="type" onchange="toggleOptions()" required>
-                <option value="MCQ">MCQ</option>
-                <option value="OPEN">Open-ended</option>
-            </select>
-        </div>
-
-        <div class="mb-3">
             <label class="form-label">Difficulty</label>
             <select class="form-select" id="difficulty">
                 <option value="EASY">EASY</option>
@@ -135,30 +121,23 @@
         <div id="mcqOptions">
             <div class="mb-3">
                 <label class="form-label">Option A</label>
-                <input type="text" class="form-control" id="option_a">
+                <input type="text" class="form-control" id="option_a" required>
             </div>
             <div class="mb-3">
                 <label class="form-label">Option B</label>
-                <input type="text" class="form-control" id="option_b">
+                <input type="text" class="form-control" id="option_b" required>
             </div>
             <div class="mb-3">
                 <label class="form-label">Option C</label>
-                <input type="text" class="form-control" id="option_c">
+                <input type="text" class="form-control" id="option_c" required>
             </div>
             <div class="mb-3">
                 <label class="form-label">Option D</label>
-                <input type="text" class="form-control" id="option_d">
+                <input type="text" class="form-control" id="option_d" required>
             </div>
             <div class="mb-3">
                 <label class="form-label">Correct Answer (A/B/C/D)</label>
-                <input type="text" class="form-control" id="correct_answer">
-            </div>
-        </div>
-
-        <div id="openAnswer" style="display:none;">
-            <div class="mb-3">
-                <label class="form-label">Open-ended Answer (optional)</label>
-                <input type="text" class="form-control" id="correct_answer_open">
+                <input type="text" class="form-control" id="correct_answer" maxlength="1" required>
             </div>
         </div>
 

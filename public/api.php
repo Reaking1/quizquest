@@ -87,44 +87,43 @@ try {
       respond(['round_id' => (int)$pdo->lastInsertId()], 201);
       break;
     }
-
 case 'create_question': {
   $b = json_input();
-  require_fields($b, ['text', 'type', 'difficulty']);
+  require_fields($b, ['text','type','difficulty','option_a','option_b','option_c','option_d','correct_answer']);
 
-  if ($b['type'] === 'MCQ') {
-    require_fields($b, ['option_a','option_b','option_c','option_d','correct_answer']);
+  // force type to MCQ
+  $b['type'] = 'MCQ';
 
-    // If the correct_answer is A/B/C/D, expand to actual option text
-    $map = [
-      'A' => $b['option_a'],
-      'B' => $b['option_b'],
-      'C' => $b['option_c'],
-      'D' => $b['option_d'],
-    ];
-    $letter = strtoupper(trim($b['correct_answer']));
-    if(isset($map[$letter])){
-      $b['correct_answer'] = $map[$letter]; // store text not letter
-    }
+  // Expand A/B/C/D into full text
+  $map = [
+    'A' => $b['option_a'],
+    'B' => $b['option_b'],
+    'C' => $b['option_c'],
+    'D' => $b['option_d'],
+  ];
+  $letter = strtoupper(trim($b['correct_answer']));
+  if (isset($map[$letter])) {
+    $b['correct_answer'] = $map[$letter];
   }
 
-  $sql = "INSERT INTO questions
-            (text, type, difficulty, option_a, option_b, option_c, option_d, correct_answer)
+  $sql = "INSERT INTO questions (text, type, difficulty, option_a, option_b, option_c, option_d, correct_answer)
           VALUES (?,?,?,?,?,?,?,?)";
   $stmt = $pdo->prepare($sql);
   $stmt->execute([
     $b['text'],
-    $b['type'],
+    'MCQ',
     $b['difficulty'],
-    $b['option_a'] ?? null,
-    $b['option_b'] ?? null,
-    $b['option_c'] ?? null,
-    $b['option_d'] ?? null,
-    $b['correct_answer'] ?? null,
+    $b['option_a'],
+    $b['option_b'],
+    $b['option_c'],
+    $b['option_d'],
+    $b['correct_answer'],
   ]);
-  respond(['id' => (int)$pdo->lastInsertId()], 201);
+
+  respond(['id'=>(int)$pdo->lastInsertId()],201);
   break;
 }
+
 
 case 'attach_question': {
     $b = json_input();
@@ -361,6 +360,152 @@ case 'get_rounds': {
     $stmt = $pdo->prepare("SELECT id, name, theme, time_limit_sec, order_no 
                            FROM rounds WHERE quiz_id=? ORDER BY order_no");
     $stmt->execute([$quiz_id]);
+    respond($stmt->fetchAll(PDO::FETCH_ASSOC));
+    break;
+}
+
+case 'get_scores': {
+    $params = [];
+    $where = [];
+
+    // Filters
+    if (!empty($_GET['player_name'])) {
+        $where[] = "p.name LIKE ?";
+        $params[] = "%" . $_GET['player_name'] . "%";
+    }
+    if (!empty($_GET['quiz_date'])) {
+        $where[] = "DATE(a.answered_at) = ?";
+        $params[] = $_GET['quiz_date'];
+    }
+    if (!empty($_GET['difficulty'])) {
+        $where[] = "q.difficulty = ?";
+        $params[] = $_GET['difficulty'];
+    }
+
+    // Main SQL with LEFT JOINs for rounds and questions
+   $sql = "SELECT 
+            a.id AS attempt_id,
+            p.name AS player_name,
+            qu.title AS quiz_title,
+            r.name AS round_name,
+            q.text AS question_text,
+            q.difficulty,
+            a.answer_text,
+            a.is_correct,
+            a.points,
+            a.answered_at
+        FROM attempts a
+        JOIN players p ON a.player_id = p.id
+        JOIN quizzes qu ON a.quiz_id = qu.id
+        LEFT JOIN rounds r ON a.round_id = r.id
+        LEFT JOIN questions q ON a.question_id = q.id";
+
+
+    if ($where) {
+        $sql .= " WHERE " . implode(" AND ", $where);
+    }
+
+    $sql .= " ORDER BY a.answered_at DESC";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    respond($rows);
+    break;
+}
+
+case 'update_score': {
+    $b = json_input();
+    require_fields($b, ['attempt_id','points']);
+
+    // 1. Update attempt row
+    $stmt = $pdo->prepare("UPDATE attempts SET points = ? WHERE id = ?");
+    $stmt->execute([$b['points'], $b['attempt_id']]);
+
+    // 2. Find the player + quiz for this attempt
+    $sel = $pdo->prepare("SELECT player_id, quiz_id FROM attempts WHERE id=?");
+    $sel->execute([$b['attempt_id']]);
+    $row = $sel->fetch(PDO::FETCH_ASSOC);
+
+    if ($row) {
+        // 3. Recalculate their total score
+        $total = ScoreService::recalcScore((int)$row['player_id'], (int)$row['quiz_id']);
+        respond([
+            'message' => 'Score updated successfully',
+            'new_total' => $total
+        ]);
+    } else {
+        respond(['error' => 'Attempt not found'], 404);
+    }
+    break;
+}
+
+
+case 'delete_quiz': {
+    $id = (int)($_GET['quiz_id'] ?? 0);
+    if(!$id) respond(['error'=>'quiz_id required'],400);
+
+    $stmt = $pdo->prepare("DELETE FROM quizzes WHERE id=?");
+    $stmt->execute([$id]);
+
+    respond(['message'=>'Quiz deleted']);
+    break;
+}
+
+case 'delete_round': {
+    $id = (int)($_GET['round_id'] ?? 0);
+    if(!$id) respond(['error'=>'round_id required'],400);
+
+    $stmt = $pdo->prepare("DELETE FROM rounds WHERE id=?");
+    $stmt->execute([$id]);
+
+    respond(['message'=>'Round deleted']);
+    break;
+}
+
+case 'delete_attempt': {
+    $id = (int)($_GET['attempt_id'] ?? 0);
+    if(!$id) respond(['error'=>'attempt_id required'],400);
+
+    $stmt = $pdo->prepare("DELETE FROM attempts WHERE id=?");
+    $stmt->execute([$id]);
+
+    respond(['message'=>'Attempt deleted']);
+    break;
+}
+
+case 'get_total_scores': {
+    $name = $_GET['player_name'] ?? null;
+    $quizId = isset($_GET['quiz_id']) ? (int)$_GET['quiz_id'] : null;
+
+    $sql = "SELECT 
+                p.name AS player_name,
+                q.title AS quiz_title,
+                SUM(a.points) AS total_points,
+                MAX(a.answered_at) AS last_answered
+            FROM attempts a
+            JOIN players p ON a.player_id = p.id
+            JOIN quizzes q ON q.id = a.quiz_id
+            WHERE 1=1";
+
+    $args = [];
+
+    if ($name) {
+        $sql .= " AND p.name LIKE ?";
+        $args[] = "%$name%";
+    }
+    if ($quizId) {
+        $sql .= " AND a.quiz_id = ?";
+        $args[] = $quizId;
+    }
+
+    $sql .= " GROUP BY a.player_id, a.quiz_id
+              ORDER BY total_points DESC, player_name ASC
+              LIMIT 200";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($args);
     respond($stmt->fetchAll(PDO::FETCH_ASSOC));
     break;
 }
